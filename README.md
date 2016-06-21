@@ -26,6 +26,11 @@ This program performs phasing of Whole Genome Sequencing genotypes in pedigrees 
 * Usage is as follows: >perl Merge_results.pl $ARGV[0] $ARGV[1] $ARGV[1]
 * where $ARGV[0] is the pedigree file in HIPster format, $ARGV[1] is the genotype file in HIPster format, and $ARGV[2] is an integer above 0 that is used as the number of adjacent observations that are required to identify a recombination event (we suggest 5)
 
+###Calculate_metrics.pl
+* This program calculates switch error rate among other metrics given the phasing results and known haplotypes.
+* Usage is as follows: >perl Calculate_metrics.pl $ARGV[0] $ARGV[1] $ARGV[1]
+* Where $ARGV[0] is the phasing results, $ARGV[1] is the known haplotypes, and $ARGV[2] is the set of diploid genotypes given to the algorithm
+
 ###Example/
 * This folder provides an example for a small pedigree. All_Diploid_genos
 * To run the example: >perl PBRV.pl Seven_sib_pedigree.csv Diploid_genos.csv 5
