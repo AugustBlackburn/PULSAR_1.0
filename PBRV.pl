@@ -453,6 +453,9 @@ for($i=1;$i<scalar(@segmentmatrixarray);$i++){
 			push @segmentmatrixarray2, "@toks2[0],@toks2[1],@toks2[2],@toks2[3],1\n";
 		}elsif(scalar(@currpatlineage) > 0 & scalar(@currmatlineage) == 0){
 			push @segmentmatrixarray2, "@toks2[0],@toks2[1],@toks2[2],@toks2[3],2\n";
+		}elsif(scalar(@currpatlineage) > 0 & scalar(@currmatlineage) > 0){
+			#print STDOUT "Fixed?\n";
+			push @segmentmatrixarray2, @segmentmatrixarray[$i];
 		}
 	}
 }
