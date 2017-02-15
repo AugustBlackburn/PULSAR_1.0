@@ -38,11 +38,13 @@ close tINFILE;
 open (INLOCS, $POS) || die;
 open (INGENO, $outfile) || die;
 open (INID, $INDV) || die;
-print OUTFILE "Name,Chr,Position,";
+print OUTFILE "Marker,Chr,Position,";
 while($line = <INID>){
 	chomp $line;
-	print OUTFILE "$line,";
+	push @headerlist, $line;
 }
+$headlisttoprint=join(",",@headerlist);
+print OUTFILE "$headlisttoprint";
 print OUTFILE "\n";
 close INID;
 #read in header line
