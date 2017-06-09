@@ -1,33 +1,33 @@
 #!/usr/local/bin/perl
+use POSIX qw(strftime);
 
-###This is the first section of PBRV. The purpose of this section is to parse out the lineages in the pedigree.
 
-#Open input and output files
+###Section 1: identify the lineages in the pedigree.
+
+#Open the pedigree file
 #$ARGV[0] is pedigree file
 open (INFILE_PED, $ARGV[0]) || die;
 
 #Read in header line in order to discard
 $header = <INFILE_PED>;
-#Read in the file one line at a time, split each line, and store information in hashes and arrays
+#Read in the file one line at a time, split each line, and store in memory
 while ($trioline = <INFILE_PED>){
 	#Remove end of line
 	chomp $trioline;
 	#Split line into an array
 	@triotoks = split(',', $trioline);
-	#Set the variable $currid to hold the ID for the current line
+	#Set the variable $currid to hold the ID for the individual in the current line
 	$currid=@triotoks[0];
-	#Make an array of each mother
+	#Store the mother in an array of mothers
 	push @maternal, @triotoks[2];
-	#Make a hash where the keys are the current id and the first array position is their mother
+	#Store the mother in the first array position of a hash where the keys are the current id, this makes looking up each person's mother fast
 	push @{$matid{$currid}}, @triotoks[2];
-	#Make an array of each father
+	#Store the father in an array of fathers
 	push @paternal, @triotoks[1];
-	#Make a hash where the keys are the current id and the first array position is their father
+	#Store the father in the first array position of a hash where the keys are the current id, this makes looking up each person's father fast
 	push @{$patid{$currid}}, @triotoks[1];
 	#Make an array of the current ids, this array and the previous two arrays holding moms and dads are in the same order
 	push @offspr, @triotoks[0];
-	#Make an array of the sex for each person, this array is in the same order as the previous three arrays
-	push @sex, @triotoks[3];
 	#If the person is a founder add them to an array of the founders
 	if(@triotoks[2] eq '0'){
 		push @founders, @triotoks[0];
@@ -35,46 +35,30 @@ while ($trioline = <INFILE_PED>){
 }
 close INFILE_PED;
 
-#create a variable ($numberofids) that holds the number of individuals in the arrays created above
-$numberofids=scalar(@offspr);
 #for each founder make a list of offspring
 foreach $founder (@founders){
 	#blank the array @currfoundoffspring
-	@currfoundoffpring=();
+	@currfoundoffspring=();
 	#add the founder to the array
-	push @currfoundoffpring, $founder;
-	#set a count of the founders offspring
-	$thisfoundercount = 0;
-	#Call a recursion algorithm that traverses the pedigree and finds each individuals offspring, starting with the founder. For each kid it adds to the array and count directly above.
+	push @currfoundoffspring, $founder;
+	#Call a recursion algorithm that traverses the pedigree and finds each individuals offspring, starting with the founder. For each kid it adds to the array and count directly above. The 
 	&find_paths($founder,$founder);
-	#Get the length of the array just created, it will change from founder to founder
-	$toks1length = scalar(@currfoundoffpring);
 	#Add each offspring to the hash %founder, with the current founder as the key.
-	for ($i=1;$i<$toks1length;$i++){
-		push @{$founder{$currfoundoffpring[0]}}, @currfoundoffpring[$i];
+	for ($i=1;$i<scalar(@currfoundoffspring);$i++){
+		push @{$founderhash{$currfoundoffpring[0]}}, @currfoundoffspring[$i];
 	}
 }
 
-###This is the second section of PBRV. The purpose of this section is to identify a subset of variants in which one allele is lineage specific (ie. introduced into the pedigree by a single founder).
-### This section of the program outputs 1 file:
-###	Potential_private_variants.rv
-
-#$ARGV[1] is a genotype file in HIPster format
-open (INFILE2, $ARGV[1])|| die;
-#Open the outfile that will have a list of the potentially lineage specific variants
-open (OUTFILE1, ">Potential_private_variants.rv") || die;
-#for each lineage
+#create hashes for quick referencing of the lineages
 foreach $lineage (@lineages){
-	#Split the path into an array containing the individuals in this path
+	#Split the path into an array containing the individuals in this lineage
 	@toks = split('_',$lineage);
-	#Get the length of the array
-	$lineagelength=scalar(@toks);
 	#If there are individuals between the founder and the last person on this path, store these individuals in a hash with a compression of the founder and the individual as the key.
-	if($lineagelength>2){
+	if(scalar(@toks)>2){
 		#Compress the founder and the individual at the end of the path into a string to use as a key in the hash
-		$firstlastcombo=@toks[0].@toks[$lineagelength-1];
+		$firstlastcombo=@toks[0].@toks[scalar(@toks)-1];
 		#Store the individuals between the founder and the last person in a hash with $firstlastcombo as the key to the hash.
-		@{$pathholder{$firstlastcombo}}=@toks[1..($lineagelength-2)];
+		@{$pathholder{$firstlastcombo}}=@toks[1..(scalar(@toks)-2)];
 	}
 	#The founder is the first spot in the array
 	$founder=@toks[0];
@@ -91,9 +75,104 @@ foreach $lineage (@lineages){
 }
 
 
-#Read in the header line of the file with the genotypes in HIPster format
-$header2 = <INFILE2>;
-#Print the headerline to the new output file. The header is the same in both files.
+###Section 2: Identify lineage specific alleles (ie. introduced into the pedigree by a single founder).
+### This section of the program outputs 1 file:
+###	Potential_private_variants.rv
+
+#Open the outfile that will have a list of the potentially lineage specific variants and an outfile to write the phased chromosomes to
+open (OUTFILE1, ">Potential_private_variants.rv") || die;
+open(OUTFILE2,">Phased_chromosomes.vcf")||die;
+print OUTFILE2 "##fileformat=VCFv4.2\n";
+$datestring = strftime "%Y%m%d", localtime;
+print OUTFILE2 "##fileDate=$datestring\n";
+print OUTFILE2 "##source=PULSAR1.0\n";
+#@ARGV[1] is a genotype file
+open(INFILE2,"@ARGV[1]")||die;
+$headerline=0;
+@genotypefile=();
+while($line=<INFILE2>){
+	chomp $line;
+	$outfileline=();
+	if($headerline eq '0'){
+		$firsttwo=substr $line, 0, 2;
+		if($firsttwo eq "##"){
+			if(grep(/reference=/, $line)){
+				print OUTFILE2 "$line\n";
+			}elsif(grep(/contig=/, $line)){
+				print OUTFILE2 "$line\n";
+			}
+			#print STDOUT "$line\n";
+		}else{
+			#print STDOUT "$line";
+			@headertoks=split("\t",$line);
+			$outfileline="Marker,Chr,Position";
+			#print STDOUT "Marker,Chr,Position";
+			for($i=9;$i<scalar(@headertoks);$i++){
+				#print STDOUT ",@headertoks[$i]";
+				$headertokholder = ",@headertoks[$i]";
+				$outfileline .= $headertokholder;
+			}
+		#print STDOUT "\n";
+		$EOLholder="\n";
+		$outfileline .= $EOLholder;
+		#print STDOUT "$outfileline\n";
+		$headerline=1;
+		}
+	}else{
+		#print STDOUT "Entered\n";
+		@toks=split("\t",$line);
+		@formatlist=split(":",@toks[8]);
+		@altlist=split(",",@toks[4]);
+		if(@formatlist[0] eq 'GT' & scalar(@altlist) eq '1'){
+			#print STDOUT "@toks[2],@toks[0],@toks[1]";
+			$outfileline="@toks[2],@toks[0],@toks[1]";
+			#Gather and store relavent info for printing out VCF file
+			push @ref, @toks[3];
+			push @alt, @toks[4];
+			push @qual, @toks[5];
+			push @filter, @toks[6];
+			push @info, @toks[7];
+			
+			
+			
+			for($i=9;$i<scalar(@toks);$i++){
+				$allelesum=();
+				$genotype=@toks[$i];
+				@splitformats=split(":",$genotype);
+				@alleles=split(/\/|\|/,@splitformats[0]);
+				#print STDOUT "@alleles[0],@alleles[1]\n";
+				if(@alleles[0] eq '0' | @alleles[0] eq '1'){
+					if(@alleles[1] eq '0' | @alleles[1] eq '1'){
+						$allelesum=@alleles[0]+@alleles[1];
+						#print STDOUT ",$allelesum";
+						$linetokholder=",$allelesum";
+						$outfileline .= $linetokholder;
+					}else{
+						#print STDOUT ",$allelesum";
+						$linetokholder=",";
+						$outfileline .= $linetokholder;
+					}
+				}else{
+					#print STDOUT ",$allelesum";
+					$linetokholder=",";
+					$outfileline .= $linetokholder;
+				}
+			}
+			#print STDOUT "\n";
+			$linetokholder="\n";
+			$outfileline .= $linetokholder;
+			#print STDOUT "$outfileline";
+		}
+	}
+	#print STDOUT "@genotypefile\n";
+	if($headerline eq '1'){
+		push @genotypefile, $outfileline;
+	}
+}
+
+#Print the headerline to the new output file. 
+$header2=@genotypefile[0];
+#print STDOUT "@genotypefile[0]";
 print OUTFILE1 "$header2";
 #Remove the end of line
 chomp $header2;
@@ -103,7 +182,9 @@ chomp $header2;
 $toks2length=scalar(@toks2);
 #Create a hash called %genotypes that has the ids as the keys
 #Read in the file and store the genotypes in a hash called %genotypes
-while($line2=<INFILE2>){
+#while($line2=<INFILE2>){
+for($j=1;$j<scalar(@genotypefile);$j++){
+	$line2=@genotypefile[$j];
 	#Remove the end of line
 	chomp $line2;
 	#Split the line
@@ -111,11 +192,10 @@ while($line2=<INFILE2>){
 	#For each column, store the appropriate data from the current line in a hash with the column name as the key
 	for($i=0;$i<$toks2length;$i++){
 		$id=@toks2[$i];
-		@{$genotypes{$id}}[$j]=@toks3[$i];
+		@{$genotypes{$id}}[$j-1]=@toks3[$i];
 	}
-	$j++;
 }
-$linecount=$j;
+$linecount=scalar(@genotypefile)-1;
 close INFILE2;
 
 #Count how many founders are sequenced and store that info in $sequencedfounderstotal
@@ -200,7 +280,7 @@ for($i=0;$i<$linecount;$i++){
 				}
 			}
 			#Count how many of their offspring are heterozygotes
-			foreach $offspring (@{$founder{$founderid}}){
+			foreach $offspring (@{$founderhash{$founderid}}){
 				if($genotypes{$offspring}[$i] == 1){
 					$foundercount++;
 					#Check that all genotyped individuals on the lineage path between the current founder and current offspring are also heterozygotes.
@@ -1141,84 +1221,97 @@ foreach $chromohap (@uniquechromohaps){
 	}
 }
 
-open(INFILE3, $ARGV[1])||die;
-$headerline=<INFILE3>;
+
+#open(INFILE3, $ARGV[1])||die;
+$headerline=@genotypefile[0];
 chomp $headerline;
 @headertoks=split(",",$headerline);
-$j=0;
-while($line=<INFILE3>){
+for($j=1;$j<scalar(@genotypefile);$j++){
+	$line=@genotypefile[$j];
 	chomp $line;
 	@toks=split(",",$line);
 	for($i=3;$i<scalar(@toks);$i++){
 		$chromohap1="@headertoks[$i]"."_1";
 		$chromohap2="@headertoks[$i]"."_2";
-		if(@{$alleles{$chromohap1}}[$j] ne "0" & @{$alleles{$chromohap1}}[$j] ne "1"){
-			if(@{$alleles{$chromohap2}}[$j] eq "0" || @{$alleles{$chromohap2}}[$j] eq "1"){
-				$newallele=@toks[$i] - @{$alleles{$chromohap2}}[$j];
-				if($newallele eq '-1'){
-					@{$alleles{$chromohap1}}[$j]=0;
+		if(@toks[$i] eq "0" || @toks[$i] eq "1" || @toks[$i] eq "2"){
+			if(@{$alleles{$chromohap1}}[$j-1] ne "0" & @{$alleles{$chromohap1}}[$j-1] ne "1"){
+				if(@{$alleles{$chromohap2}}[$j-1] eq "0" || @{$alleles{$chromohap2}}[$j-1] eq "1"){
+					$newallele=@toks[$i] - @{$alleles{$chromohap2}}[$j-1];
+					if($newallele eq '-1'){
+						@{$alleles{$chromohap1}}[$j-1]=0;
+					}else{
+						@{$alleles{$chromohap1}}[$j-1] = @toks[$i] - @{$alleles{$chromohap2}}[$j-1];
+					}
 				}else{
-					@{$alleles{$chromohap1}}[$j] = @toks[$i] - @{$alleles{$chromohap2}}[$j];
+					if(@toks[$i] eq '0'){
+						@{$alleles{$chromohap1}}[$j-1]=0;
+						@{$alleles{$chromohap2}}[$j-1]=0;
+					}elsif(@toks[$i] eq '2'){
+						@{$alleles{$chromohap1}}[$j-1]=1;
+						@{$alleles{$chromohap2}}[$j-1]=1;
+					}
 				}
-			}else{
-				if(@toks[$i] eq '0'){
-					@{$alleles{$chromohap1}}[$j]=0;
-					@{$alleles{$chromohap2}}[$j]=0;
-				}elsif(@toks[$i] eq '2'){
-					@{$alleles{$chromohap1}}[$j]=1;
-					@{$alleles{$chromohap2}}[$j]=1;
-				}
-			}
-		}elsif(@{$alleles{$chromohap2}}[$j] ne "0" & @{$alleles{$chromohap2}}[$j] ne "1"){
-			if(@{$alleles{$chromohap1}}[$j] eq "0" || @{$alleles{$chromohap1}}[$j] eq "1"){
-				$newallele=@toks[$i] - @{$alleles{$chromohap1}}[$j];
-				if($newallele eq '-1'){
-					@{$alleles{$chromohap2}}[$j] = 0;
-				}else{
-					@{$alleles{$chromohap2}}[$j] = @toks[$i] - @{$alleles{$chromohap1}}[$j];
+			}elsif(@{$alleles{$chromohap2}}[$j-1] ne "0" & @{$alleles{$chromohap2}}[$j-1] ne "1"){
+				if(@{$alleles{$chromohap1}}[$j-1] eq "0" || @{$alleles{$chromohap1}}[$j-1] eq "1"){
+					$newallele=@toks[$i] - @{$alleles{$chromohap1}}[$j-1];
+					if($newallele eq '-1'){
+						@{$alleles{$chromohap2}}[$j-1] = 0;
+					}else{
+						@{$alleles{$chromohap2}}[$j-1] = @toks[$i] - @{$alleles{$chromohap1}}[$j-1];
+					}
 				}
 			}
 		}
 	}
-	$j++;
 }
 
+@toks2=split(",",$header2);
 @haplisttoprint=keys %alleles;
-
-open(OUTFILE,">Phased_chromosomes.csv")||die;
-print OUTFILE "Marker,Chr,Position";
-foreach $chromohap (@haplisttoprint){
-	print OUTFILE ",$chromohap";
+print OUTFILE2 "##phasing=partial\n";
+print OUTFILE2 "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
+#print OUTFILE "Marker,Chr,Position";
+for($i=3;$i<scalar(@toks2);$i++){
+	print OUTFILE2 "\t@toks2[$i]";
 }
-print OUTFILE "\n";
+print OUTFILE2 "\n";
 for($j=0;$j<scalar(@{$haplotypes{'Position'}});$j++){
-	print OUTFILE "@{$haplotypes{'Marker'}}[$j],@{$haplotypes{'Chr'}}[$j],@{$haplotypes{'Position'}}[$j]";
-	foreach $chromohap (@haplisttoprint){
-		print OUTFILE ",@{$alleles{$chromohap}}[$j]";
+	print OUTFILE2 "@{$haplotypes{'Chr'}}[$j]\t@{$haplotypes{'Position'}}[$j]\t@{$haplotypes{'Marker'}}[$j]\t@ref[$j]\t@alt[$j]\t@qual[$j]\t@filter[$j]\t@info[$j]\tGT";
+	for($i=3;$i<scalar(@toks2);$i++){
+	#foreach $chromohap (@haplisttoprint){
+		$chromo1hap="@toks2[$i]"."_1";
+		$chromo2hap="@toks2[$i]"."_2";
+		if(@{$alleles{$chromo1hap}}[$j] eq '0' || @{$alleles{$chromo1hap}}[$j] eq '1'){
+			if(@{$alleles{$chromo2hap}}[$j] eq '0' || @{$alleles{$chromo2hap}}[$j] eq '1'){
+				print OUTFILE2 "\t@{$alleles{$chromo1hap}}[$j]|@{$alleles{$chromo2hap}}[$j]";
+			}else{
+				print OUTFILE2 "\t.";
+			}
+		}else{
+			print OUTFILE2 "\t.";
+		}
 	}
-	print OUTFILE "\n";
+	print OUTFILE2 "\n";
 }
-close OUTFILE;
+close OUTFILE2;
 
 
 
 
 
 ######Subroutines######
-#Recursion algorithm that traverses the pedigree and finds each individuals offspring (this is called starting with the founder). For each kid it adds to the array (@currfoundoffpring) and count ($thisfoundercount).
+#Recursion algorithm that traverses the pedigree and finds each individuals offspring (this is called starting with the founder). For each kid it adds to the array (@currfoundoffspring).
 sub find_paths{
-	$thisfoundercount++;
 	#The current person to search for their offspring, must use 'my' to declare that each time this function is called that the variable is unique to make the recursion work 
 	my $thisperson = $_[0];
 	push @lineages, $_[1];
 	#Search through the arrays of moms and dads
-	for(my $i = 0; $i < $numberofids;$i++){
+	for(my $i = 0; $i < scalar(@offspr);$i++){
 		#If the current person is a mom or a dad in the pedigree
 		if (@paternal[$i] eq $thisperson || @maternal[$i] eq $thisperson){
 			#Add the person to the string contained in $path 'my' has to be called for recursion to work
 			my $path = $_[1]."_".@offspr[$i];
 			#Add the person to their offspring to the array of offspring
-			push @currfoundoffpring, @offspr[$i];
+			push @currfoundoffspring, @offspr[$i];
 			#Call the algorithm again using the offspring and sending the new path variable
 			&find_paths(@offspr[$i],$path);
 		}
