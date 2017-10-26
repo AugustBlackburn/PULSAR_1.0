@@ -45,7 +45,7 @@ foreach $founder (@founders){
 	&find_paths($founder,$founder);
 	#Add each offspring to the hash %founder, with the current founder as the key.
 	for ($i=1;$i<scalar(@currfoundoffspring);$i++){
-		push @{$founderhash{$currfoundoffpring[0]}}, @currfoundoffspring[$i];
+		push @{$founderhash{$founder}}, @currfoundoffspring[$i];
 	}
 }
 
