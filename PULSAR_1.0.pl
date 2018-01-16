@@ -569,8 +569,43 @@ for($i=1;$i<scalar(@segmentmatrixarray);$i++){
 			push @segmentmatrixarray2, "@toks2[0],@toks2[1],@toks2[2],@toks2[3],2\n";
 		#If there is ambiguity based on this analysis (as there could be, ex. everyone sharing the segment are siblings) don't change the chr, just add to next array
 		}elsif(scalar(@currpatlineage) > 0 & scalar(@currmatlineage) > 0){
-			push @segmentmatrixarray2, @segmentmatrixarray[$i];
+			push @tempsegmentmatrixarray2, @segmentmatrixarray[$i];
 		}
+	}
+}
+foreach $temptoken (@tempsegmentmatrixarray2){
+	chomp $temptoken;
+	@temptoks=split(",",$temptoken);
+	$id=@temptoks[0];
+	$start=@temptoks[2];
+	$end=@temptoks[3];
+	$chrhap=@temptoks[4];
+	$wrongcount=0;
+	$rightcount=0;
+	foreach $segmattoken2 (@segmentmatrixarray2){
+		chomp $segmattoken2;
+		@segmattoks=split(",",$segmattoken2);
+		$id2=@segmattoks[0];
+		$start2=@segmattoks[2];
+		$end2=@segmattoks[3];
+		$chrhap2=@segmattoks[4];
+		if($id eq $id2 & $start < $end2 & $end > $start2){
+			if($chrhap eq $chrhap2){
+				$wrongcount++;
+			}else{
+				$rightcount++;
+			}
+		}
+	}
+	if($wrongcount > $rightcount){
+		if($chrhap eq '1'){
+			$newchrhap='2';
+		}elsif($chrhap eq '2'){
+			$newchrhap='1';
+		}
+		push @segmentmatrixarray2, "@temptoks[0],@temptoks[1],@temptoks[2],@temptoks[3],$newchrhap\n";
+	}else{
+		push @segmentmatrixarray2, "$temptoken\n";
 	}
 }
 
