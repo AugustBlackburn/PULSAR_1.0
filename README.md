@@ -15,3 +15,8 @@ This program performs phasing of Whole Genome Sequencing genotypes in pedigrees 
 * This folder provides an example for a small pedigree. Either copy the programs to this folder or call them from the directory the programs are in.
 * To run the example: >perl PULSAR_1.0.pl Seven_sib_pedigree.csv Genotypes.vcf 5 Allele_frequency.csv 0.05
 * To run the IBD sharing program: >perl IBD_sharing_estimator.pl Seven_sib_pedigree.csv
+
+###Tips and recommendations
+* The formatting for files can be found in the examples provided in the folder 'Example/'
+* We currently recommend using 5 as the number of observations that are required to identify a recombination event. This is based on casual observation of what has worked well for us, not a thorough optimization of the parameter.
+* We do not make a recommendation for the minor allele frequency threshold for use when founders are missing. The optimal threshold varies with the number of founders and other factors.

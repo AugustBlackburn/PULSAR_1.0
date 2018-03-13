@@ -82,19 +82,29 @@ foreach $lineage (@lineages){
 #Open the outfile that will have a list of the potentially lineage specific variants and an outfile to write the phased chromosomes to
 open (OUTFILE1, ">Potential_private_variants.rv") || die;
 open(OUTFILE2,">Phased_chromosomes.vcf")||die;
+#Print VCF version to output file
 print OUTFILE2 "##fileformat=VCFv4.2\n";
+#Get the date and store in the variable $datestring
 $datestring = strftime "%Y%m%d", localtime;
+#Print the date ($datestring) and the data source (PULSAR1.0) to the vcf file
 print OUTFILE2 "##fileDate=$datestring\n";
 print OUTFILE2 "##source=PULSAR1.0\n";
-#@ARGV[1] is a genotype file
+#@ARGV[1] is a genotype file, this file is in vcf format. 
 open(INFILE2,"@ARGV[1]")||die;
+#Set a switch ($headerline) to 0, once the headerlines of the vcf file are read in and processed the program will set the switch to 1
 $headerline=0;
+#We are going to reformat the lines from the vcf file and store them in an array (@genotypefile). 
 @genotypefile=();
+#Read the genotype file one line at a time
 while($line=<INFILE2>){
 	chomp $line;
+	#Blank the variable $outfileline with each new line. This line will be used to contruct the outfile line that will be appended to the array @genotypefile.
 	$outfileline=();
+	#If the headerlines haven't been read in and processed, do so. Otherwise skip this section. Once the headerlines of the vcf file are read in and processed the the switch ($headerline) is set to 1.
 	if($headerline eq '0'){
+		##Get the first two characters of the line and store in variable $firsttwo.
 		$firsttwo=substr $line, 0, 2;
+		#If the first two variables are '##' then these are headerlines that proceed the line with ID names. If these contain reference or contig, print those lines out to the new vcf file.
 		if($firsttwo eq "##"){
 			if(grep(/reference=/, $line)){
 				print OUTFILE2 "$line\n";
@@ -102,11 +112,13 @@ while($line=<INFILE2>){
 				print OUTFILE2 "$line\n";
 			}
 			#print STDOUT "$line\n";
+		#If the switch hasn't been set to one, but the first two characters arent '##', then this is the headerline that contains info on ids. Reformat this line and put it in the array (@genotypefile). After this line is processed, set the switch to 1.
 		}else{
 			#print STDOUT "$line";
 			@headertoks=split("\t",$line);
 			$outfileline="Marker,Chr,Position";
 			#print STDOUT "Marker,Chr,Position";
+			#Gather the ids in the vcf file, reformat, and append to $outfileline, which will be placed in @genotypefile[0].
 			for($i=9;$i<scalar(@headertoks);$i++){
 				#print STDOUT ",@headertoks[$i]";
 				$headertokholder = ",@headertoks[$i]";
@@ -118,29 +130,33 @@ while($line=<INFILE2>){
 		#print STDOUT "$outfileline\n";
 		$headerline=1;
 		}
+	#The headerlines have been processed. The rest of the line in the file contain genotype information. Process these lines and store them in @genotypefile.
 	}else{
 		#print STDOUT "Entered\n";
 		@toks=split("\t",$line);
+		#Get the list of formats for the genotypes
 		@formatlist=split(":",@toks[8]);
+		#Get the list for alternative alleles
 		@altlist=split(",",@toks[4]);
+		#Only process the lines that have GT format available and are diallelic
 		if(@formatlist[0] eq 'GT' & scalar(@altlist) eq '1'){
 			#print STDOUT "@toks[2],@toks[0],@toks[1]";
 			$outfileline="@toks[2],@toks[0],@toks[1]";
-			#Gather and store relavent info for printing out VCF file
+			#Gather and store relavent info for printing out VCF file. This info will eventually be used when printing out the phased genotypes.
 			push @ref, @toks[3];
 			push @alt, @toks[4];
 			push @qual, @toks[5];
 			push @filter, @toks[6];
 			push @info, @toks[7];
-			
-			
-			
+			#Change the formatting of the genotypes from vcf GT format to 0,1,2, reformat line and store in @genotypefile.
 			for($i=9;$i<scalar(@toks);$i++){
 				$allelesum=();
+				#Parse each genotype
 				$genotype=@toks[$i];
 				@splitformats=split(":",$genotype);
 				@alleles=split(/\/|\|/,@splitformats[0]);
 				#print STDOUT "@alleles[0],@alleles[1]\n";
+				#check to make sure that both alleles are present and in the right format
 				if(@alleles[0] eq '0' | @alleles[0] eq '1'){
 					if(@alleles[1] eq '0' | @alleles[1] eq '1'){
 						$allelesum=@alleles[0]+@alleles[1];
@@ -165,6 +181,7 @@ while($line=<INFILE2>){
 		}
 	}
 	#print STDOUT "@genotypefile\n";
+	#After the headerlines have been processed, start storing the reformatted lines in @genotypefile, this includes the headerline carrying the ids
 	if($headerline eq '1'){
 		push @genotypefile, $outfileline;
 	}
@@ -206,6 +223,7 @@ foreach $founder (@founders){
 	}
 }
 
+#Read in the file with allele frequencies, for each variant determine if one of the alleles is potentially lineage specific. If they are potential LSAs print to outfile and store in @potentialrarevariants
 open(INFILE_FREQ,"@ARGV[3]")||die;
 $freq_header=<INFILE_FREQ>;
 #Iterate through each variant in the %genotypes hash
@@ -260,7 +278,7 @@ for($i=0;$i<$linecount;$i++){
 		next;
 	}
 	
-	#If both homozygous states are present then this is a common variant, is not lineage specific. If both are present just continue to next line.
+	#If both homozygous states are present then this is a common variant, is not lineage specific. If both are present just continue to next line. Otherwise, check if all heterozygous alleles are carried by descendants of the same founder
 	if($count0==0||$count2==0){
 		#cycle through the list of founders
 		foreach $founderid (@founders){
@@ -469,7 +487,7 @@ foreach $lineage (@lineages){
 	$currlength=scalar(@toks5);
 	#figure out the current id
 	$currid=@toks5[$currlength-1];
-	#if the length is one that means that the current id is a founder
+	#if the length is 1 that means that the current id is a founder
 	if($currlength == 1){
 		#If the current id is a founder use themselves as the maternal and paternal founder
 		push @{$maternal{$currid}}, @toks5[0];
@@ -567,12 +585,16 @@ for($i=1;$i<scalar(@segmentmatrixarray);$i++){
 		#If there are only matches on the paternal side and no matches on the maternal side, set the chr to 2 and store
 		}elsif(scalar(@currpatlineage) > 0 & scalar(@currmatlineage) == 0){
 			push @segmentmatrixarray2, "@toks2[0],@toks2[1],@toks2[2],@toks2[3],2\n";
-		#If there is ambiguity based on this analysis (as there could be, ex. everyone sharing the segment are siblings) don't change the chr, just add to next array
+		#If there is ambiguity based on this analysis (as there could be, ex. everyone sharing the segment are siblings) don't change the chr, just add to an array to be sorted out in the next step (@tempsegmentmatrixarray2). These will be checked for consistency with the non ambiguous haplotypes in the next step
 		}elsif(scalar(@currpatlineage) > 0 & scalar(@currmatlineage) > 0){
 			push @tempsegmentmatrixarray2, @segmentmatrixarray[$i];
 		}
 	}
 }
+
+
+#This section takes the segments that were not either specific to a founder or unambiguously specific to being either paternally or maternally inherited and checks them for consistency with the haplotypes that were unambiguously assigned in the previous step.
+#For each segment that hasn't been unambiguously assigned based on maternal or paternal inheritance (other than founders)
 foreach $temptoken (@tempsegmentmatrixarray2){
 	chomp $temptoken;
 	@temptoks=split(",",$temptoken);
@@ -580,8 +602,10 @@ foreach $temptoken (@tempsegmentmatrixarray2){
 	$start=@temptoks[2];
 	$end=@temptoks[3];
 	$chrhap=@temptoks[4];
+	#For each unassigned segment, create two counts, to count the # of correct and incorrect overlaps.
 	$wrongcount=0;
 	$rightcount=0;
+	#Go through each segment in that has been unambiguously assigned as either paternal or maternal
 	foreach $segmattoken2 (@segmentmatrixarray2){
 		chomp $segmattoken2;
 		@segmattoks=split(",",$segmattoken2);
@@ -589,6 +613,7 @@ foreach $temptoken (@tempsegmentmatrixarray2){
 		$start2=@segmattoks[2];
 		$end2=@segmattoks[3];
 		$chrhap2=@segmattoks[4];
+		#If the unassigned segment overlaps with an assigned (paternal vs maternal) segment in the same individual count if the unassigned segments current assignment is correct or not based on the current assigned segment. Multiple assigned segments can all overlap the segment, which should all give the same result, but given the possibility (though unlikely) of errors in the assigned group, count and use a majority vote to correct if necessary.
 		if($id eq $id2 & $start < $end2 & $end > $start2){
 			if($chrhap eq $chrhap2){
 				$wrongcount++;
@@ -597,6 +622,7 @@ foreach $temptoken (@tempsegmentmatrixarray2){
 			}
 		}
 	}
+	#Based on a majority vote of correct/incorrect assignment change the current assignment and add to the array of segments assigned mat/pat inheritance (@segmentmatrixarray2)
 	if($wrongcount > $rightcount){
 		if($chrhap eq '1'){
 			$newchrhap='2';
@@ -609,6 +635,8 @@ foreach $temptoken (@tempsegmentmatrixarray2){
 	}
 }
 
+
+#This section extends the segments' boundaries into the ambiguous regions between segments. This only extends the boundaries as far as is unambiguous given the individuals sharing the segments.
 for($i=1;$i<scalar(@segmentmatrixarray2);$i++){
 	$line1=@segmentmatrixarray2[$i];
 	#Remove the end of line
@@ -618,6 +646,7 @@ for($i=1;$i<scalar(@segmentmatrixarray2);$i++){
 	$id = @toks1[0];
 	@{$idlisthash{$id}}[0]=1;
 	$chrhap=@toks1[4];
+	#Make hashes that are specific to mat / pat chr origin, with keys as the individual ids, that hold the haplotypes (and by naming convention the ids the haplotype is shared with), and the starts and ends of each haplotype. The order of the arrays within the hashes are consistent, such that the ith start, end, and haplotype correspond.
 	if($chrhap eq '1'){
 		push @{$pseudofounder1{$id}}, @toks1[1];
 		push @{$start1{$id}}, @toks1[2];
@@ -629,16 +658,21 @@ for($i=1;$i<scalar(@segmentmatrixarray2);$i++){
 	}
 }
 
+#Make a hash for easy lookup of order of the variant positions. For a given position this allows us to know it is the ith variant (eg. the 2nd, or 7th, or 542nd, etc)
 for($i=0;$i<scalar(@{$genotypes{Position}});$i++){
 	$loc=@{$genotypes{Position}}[$i];
 	@{$loclookup{$loc}}[0]=$i;
 }
 
+#Get a list of the ids, store in array @idlist
 @idlist= keys %idlisthash;
 
+#For each id, make hashes that will be used to look up the order of the haplotypes along the chromosome in the arrays within the hashes.
 foreach $id (@idlist){
+	#Make an array (@startsarray) of the starts for each haplotype sorted from lowest to highest. Redefine the array every mat /pat chromosome for each individual. This part works on the mat lineage.
 	@startsarray=();
 	@startsarray= sort{$a <=> $b} @{$start1{$id}};
+	#Match each start to its position in the hash holding starts for each id. Store the array position for easy lookup.
 	for($i=0;$i<scalar(@{$start1{$id}});$i++){
 		$currtok=@{$start1{$id}}[$i];
 		for($j=0;$j<scalar(@startsarray);$j++){
@@ -648,8 +682,10 @@ foreach $id (@idlist){
 			}
 		}
 	}
+	#Make an array (@startsarray) of the starts for each haplotype sorted from lowest to highest. Redefine the array every mat /pat chromosome for each individual. This part works on the pat lineage.
 	@startsarray=();
 	@startsarray= sort {$a <=> $b} @{$start2{$id}};
+	#Match each start to its position in the hash holding starts for each id. Store the array position for easy lookup.
 	for($i=0;$i<scalar(@{$start2{$id}});$i++){
 		$currtok=@{$start2{$id}}[$i];
 		for($j=0;$j<scalar(@startsarray);$j++){
@@ -661,21 +697,33 @@ foreach $id (@idlist){
 	}
 }
 
+#For each id 
 foreach $id (@idlist){
+	#Gor through the list of haplotypes on the mat chromosome.
 	for ($i=0;$i<scalar(@{$arrayorderlookup1{$id}});$i++){
+		#Lookup the current haplotype's place in the hash %start1
 		$currtokspot=@{$arrayorderlookup1{$id}}[$i];
-		#Dont't forget to do this with both sides
+		#Look up the current haplotype, which by naming convention carries the information about who shares the haplotype. Get a list of the people who share the haplotype.
 		@sharedidlist=();
 		@sharedidlist=split('v',@{$pseudofounder1{$id}}[$currtokspot]);
+		#Get the start for this haplotype
 		$start=@{$start1{$id}}[$currtokspot];
+		#Get the position of this location in the array of start locations for the variants
 		$startarrayposition=@{$loclookup{$start}}[0];
+		#Get the end for this haplotype
 		$end=@{$end1{$id}}[$currtokspot];
+		#Get the position of this location in the array of end locations for the variants
 		$endarrayposition=@{$loclookup{$end}}[0];
+		#Set a switch, which when flipped will cause the exit of the forthcoming while loop
 		$stop=0;
+		#Set a scalar variable that hold the position as the algorithm moves along the chromosome
 		$goingback=$startarrayposition;
+		#While the switch has not been flipped continue doing the following: Moving backward along the chromosome, search for opposing homozygous alleles among the individuals that share the haplotype. Keep track of the position where the first time opposing homozygous alleles are observed.
 		while($stop==0){
+			#Count the number of 0's and 2's. If both are observed these are opposing homozygous alleles. Stop at that point.
 			$zerosum=0;
 			$twosum=0;
+			#For each person carrying the haplotype, count 0s and 2s
 			foreach $id2 (@sharedidlist){		
 				if(@{$genotypes{$id2}}[$goingback] eq '0'){
 					$zerosum++;
@@ -683,19 +731,27 @@ foreach $id (@idlist){
 					$twosum++;
 				}
 			}
+			#If there are opposing homozygous alleles, stop the LRP extension.
 			if($zerosum > 0 & $twosum > 0){
 				$stop++;
+			#If you hit the beginning of the chromosome, stop the LRP extension, otherwise it will hit an indefinite loop.
 			}elsif($goingback==0){
 				$stop++;
+			#If opposing homozygous alleles have not been observed and were not at the beginning of the chromosome, keep going.
 			}else{
 				$goingback=$goingback-1;
 			}
 		}
+		#Set a switch, which when flipped will cause the exit of the forthcoming while loop
 		$stop=0;
+		#Set a scalar variable that hold the position as the algorithm moves along the chromosome
 		$goingforward=$endarrayposition;
+		#While the switch has not been flipped continue doing the following: Moving forward along the chromosome, search for opposing homozygous alleles among the individuals that share the haplotype. Keep track of the position where the first time opposing homozygous alleles are observed.
 		while($stop==0){
+			#Count the number of 0's and 2's. If both are observed these are opposing homozygous alleles. Stop at that point.
 			$zerosum=0;
 			$twosum=0;
+			#For each person carrying the haplotype, count 0s and 2s
 			foreach $id2 (@sharedidlist){		
 				if(@{$genotypes{$id2}}[$goingforward] eq '0'){
 					$zerosum++;
@@ -703,31 +759,46 @@ foreach $id (@idlist){
 					$twosum++;
 				}
 			}
+			#If there are opposing homozygous alleles, stop the LRP extension.
 			if($zerosum > 0 & $twosum > 0){
 				$stop++;
+			#If you hit the end of the chromosome, stop the LRP extension, otherwise it will hit an indefinite loop.
 			}elsif($goingforward>= (scalar(@{$genotypes{$id}})-1)){
 				$stop++;
+			#If opposing homozygous alleles have not been observed and were not at the end of the chromosome, keep going.
 			}else{
 				$goingforward++;
 			}
 		}
-		@{$LRPstart1{$id}}[$currtokspot]=@{$genotypes{Position}}[$goingback];
-		@{$LRPend1{$id}}[$currtokspot]=@{$genotypes{Position}}[$goingforward];
+		#Store the LRP extended starts and ends for this segment. This is not the final result. Below these extensions, which often overlap each other will be reconciled.
+		@{$LRPstart1{$id}}[$currtokspot]=@{$genotypes{Position}}[$goingback+1];
+		@{$LRPend1{$id}}[$currtokspot]=@{$genotypes{Position}}[$goingforward-1];
 	}
+	#Same LRP extension process as above, except for the pat chromosome.
 	for ($i=0;$i<scalar(@{$arrayorderlookup2{$id}});$i++){
+		#Lookup the current haplotype's place in the hash %start2
 		$currtokspot=@{$arrayorderlookup2{$id}}[$i];
-		#Dont't forget to do this with both sides
+		#Look up the current haplotype, which by naming convention carries the information about who shares the haplotype. Get a list of the people who share the haplotype.
 		@sharedidlist=();
 		@sharedidlist=split('v',@{$pseudofounder2{$id}}[$currtokspot]);
+		#Get the start for this haplotype
 		$start=@{$start2{$id}}[$currtokspot];
+		#Get the position of this location in the array of start locations for the variants
 		$startarrayposition=@{$loclookup{$start}}[0];
+		#Get the end for this haplotype
 		$end=@{$end2{$id}}[$currtokspot];
+		#Get the position of this location in the array of end locations for the variants
 		$endarrayposition=@{$loclookup{$end}}[0];
+		#Set a switch, which when flipped will cause the exit of the forthcoming while loop
 		$stop=0;
+		#Set a scalar variable that hold the position as the algorithm moves along the chromosome
 		$goingback=$startarrayposition;
+		#While the switch has not been flipped continue doing the following: Moving backward along the chromosome, search for opposing homozygous alleles among the individuals that share the haplotype. Keep track of the position where the first time opposing homozygous alleles are observed.
 		while($stop==0){
+			#Count the number of 0's and 2's. If both are observed these are opposing homozygous alleles. Stop at that point.
 			$zerosum=0;
 			$twosum=0;
+			#For each person carrying the haplotype, count 0s and 2s
 			foreach $id2 (@sharedidlist){		
 				if(@{$genotypes{$id2}}[$goingback] eq '0'){
 					$zerosum++;
@@ -735,19 +806,27 @@ foreach $id (@idlist){
 					$twosum++;
 				}
 			}
+			#If there are opposing homozygous alleles, stop the LRP extension.
 			if($zerosum > 0 & $twosum > 0){
 				$stop++;
+			#If you hit the beginning of the chromosome, stop the LRP extension, otherwise it will hit an indefinite loop.
 			}elsif($goingback==0){
 				$stop++;
+			#If opposing homozygous alleles have not been observed and were not at the beginning of the chromosome, keep going.
 			}else{
 				$goingback=$goingback-1;
 			}
 		}
+		#Set a switch, which when flipped will cause the exit of the forthcoming while loop
 		$stop=0;
+		#Set a scalar variable that hold the position as the algorithm moves along the chromosome
 		$goingforward=$endarrayposition;
+		#While the switch has not been flipped continue doing the following: Moving forward along the chromosome, search for opposing homozygous alleles among the individuals that share the haplotype. Keep track of the position where the first time opposing homozygous alleles are observed.
 		while($stop==0){
+			#Count the number of 0's and 2's. If both are observed these are opposing homozygous alleles. Stop at that point.
 			$zerosum=0;
 			$twosum=0;
+			#For each person carrying the haplotype, count 0s and 2s
 			foreach $id2 (@sharedidlist){		
 				if(@{$genotypes{$id2}}[$goingforward] eq '0'){
 					$zerosum++;
@@ -755,91 +834,108 @@ foreach $id (@idlist){
 					$twosum++;
 				}
 			}
+			#If there are opposing homozygous alleles, stop the LRP extension.
 			if($zerosum > 0 & $twosum > 0){
 				$stop++;
+			#If you hit the end of the chromosome, stop the LRP extension, otherwise it will hit an indefinite loop.
 			}elsif($goingforward>= (scalar(@{$genotypes{$id}})-1)){
 				$stop++;
+			#If opposing homozygous alleles have not been observed and were not at the end of the chromosome, keep going.
 			}else{
 				$goingforward++;
 			}
 		}
-		@{$LRPstart2{$id}}[$currtokspot]=@{$genotypes{Position}}[$goingback];
-		@{$LRPend2{$id}}[$currtokspot]=@{$genotypes{Position}}[$goingforward];
+		#Store the LRP extended starts and ends for this segment. This is not the final result. Below these extensions, which often overlap each other will be reconciled.
+		@{$LRPstart2{$id}}[$currtokspot]=@{$genotypes{Position}}[$goingback+1];
+		@{$LRPend2{$id}}[$currtokspot]=@{$genotypes{Position}}[$goingforward-1];
 	}
 }
 
+#This section reconciles the LRP extensions of the existing boundaries and store them
+#For each person
 foreach $id (@idlist){
+	#Go though the list of haplotypes on the maternal side, and using the overlap with their neighboring haplotypes on the same chromosome, make a decision about where to place the boundaries of the current haplotypes.
 	for ($i=0;$i<scalar(@{$arrayorderlookup1{$id}});$i++){
+		#Look up the order of this haplotype along the chromosome
 		$currtokspot=@{$arrayorderlookup1{$id}}[$i];
+		#Get the start and end of the adjacent haplotypes, only the start or end adjacent
 		$nextstart=@{$start1{$id}}[$currtokspot+1];
 		$lastend=@{$end1{$id}}[$currtokspot-1];
+		#Get the start and end of the current haplotype
 		$curstart=@{$start1{$id}}[$currtokspot];
 		$curend=@{$end1{$id}}[$currtokspot];
+		#Get the LRP extended start and end of the current haplotype
 		$LRPstart=@{$LRPstart1{$id}}[$currtokspot];
 		$LRPend=@{$LRPend1{$id}}[$currtokspot];
+		#Get the LRP extended start and end of the adjacent haplotypes, only the start or end adjacent
 		$lastLRPend=@{$LRPend1{$id}}[$currtokspot-1];
 		$nextLRPstart=@{$LRPstart1{$id}}[$currtokspot+1];
-		###Figure out new start
+		#Figure out new start
 		if($i==0){
 			@{$newstart1{$id}}[$currtokspot]=@{$LRPstart1{$id}}[$currtokspot];	
 		}else{
+			#Begin by testing for reliability. The new LRP extensions shouldn't overlap the non-extended boundaries of the adjacent haplotypes. This section works on the decision making for the LRP extended start.
+			#If the end of the adjacent haplotype is greater than the LRP extended start, this LRPstart is unreliable
 			if($lastend > $LRPstart){
-				#This LRPstart is unreliable
+				#If the LRP end of the adjacent haplotype is greater than the current haplotype start, the last LRTend is unreliable
 				if($lastLRPend > $curstart){
-					#The last LRTend is unreliable
 					#Both LRP extensions are unreliable, go off of original start
 					@{$newstart1{$id}}[$currtokspot]=$curstart;
+				#The LRP end of the adjacent haplotype appears to be reliable, and the current haplotype LRP start is unreliable, use the LRP end for the adjacent haplotype
 				}else{
-					#Use last LRTend + 1
+					#Use last LRPend + 1
 					@{$newstart1{$id}}[$currtokspot]=$lastLRPend+1;
 				}
+			#This LRPstart is reliable
 			}else{
-				#This LRPstart is reliable
+				#If the LRP end for the adjacent haplotype overlaps the start of the current haplotype, the LRTend for the adjacent haplotype is unreliable
 				if($lastLRPend > $curstart){
-					#The last LRTend is unreliable
-					#Use this LRTstart
+					#Use this LRPstart
 					@{$newstart1{$id}}[$currtokspot]=$LRPstart;
+				#Both LRT extensions are potentially reliable
 				}else{
-					#Both LRT extensions are reliablish
+					#If the LRP extensions overlap use the LRP end to establish a boundary outside of the overlap
 					if($lastLRPend > $LRPstart){
-						#The LRP extensions overlap
-						#Use last LRTend + 1
+						#Use last LRPend + 1
 						@{$newstart1{$id}}[$currtokspot]=$lastLRPend+1;
+					#The LRP extensions don't overlap
 					}else{
-						#The LRP extensions don't overlap
-						#Use this LRTstart
+						#Use this LRPstart
 						@{$newstart1{$id}}[$currtokspot]=$LRPstart;
 					}
 				}
 			}
 		}
+		#Figure out new end
 		if($i==(scalar(@{$arrayorderlookup1{$id}})-1)){
 			@{$newend1{$id}}[$currtokspot]=@{$LRPend1{$id}}[$currtokspot];
 		}else{
+			#This is the same process, but for the LRP extended end of the haplotype instead of the beginning. Begin by testing for reliability. The new LRP extensions shouldn't overlap the non-extended boundaries of the adjacent haplotypes
+			#If the start of the adjacent haplotype is less than the LRP extended end, this LRPend is unreliable
 			if($nextstart < $LRPend){
-				#This LRP end is unreliable
+				#If the LRP start of the adjacent haplotype is less than the current haplotype end, the andjacent LRPstart is unreliable
 				if($nextLRPstart < $curend){
-					#The next LRP start is unreliable
-					#Both LRP extensions are unreliable, go off of the original end
+					#Both LRP extensions are unreliable, go off of original end
 					@{$newend1{$id}}[$currtokspot]=$curend;
+				#The LRP start of the adjacent haplotype appears to be reliable, and the current haplotype LRP end is unreliable, use the LRP start for the adjacent haplotype
 				}else{
 					#Use the next LRP start -1
 					@{$newend1{$id}}[$currtokspot]=$nextLRPstart-1;
 				}	
+			#This LRP end is reliable
 			}else{
-				#This LRP end is reliable
+				#If the LRP start for the adjacent haplotype overlaps the end of the current haplotype, the LRTstart for the adjacent haplotype is unreliable
 				if($nextLRPstart < $curend){
-					#The next LRP start is unreliable
 					#Use the current LRP end
 					@{$newend1{$id}}[$currtokspot]=$LRPend;
+				#Both LRT extensions are potentially reliable
 				}else{
-					#Both LRP extensions are reliable
+					#If the LRP extensions overlap use the LRP start of the adjacent haplotype to establish a boundary outside of the overlap
 					if($nextLRPstart < $LRPend){
-						#The LRP extensions overlap
 						#Use the next LRP start -1
 						@{$newend1{$id}}[$currtokspot]=$nextLRPstart-1;
+					#The LRP extensions don't overlap
 					}else{
-						#The LRP extensions don't overlap
 						#Use this LRP end
 						@{$newend1{$id}}[$currtokspot]=$LRPend;
 					}
@@ -847,77 +943,88 @@ foreach $id (@idlist){
 			}
 		}
 	}
+	#Go though the list of haplotypes on the maternal side, and using the overlap with their neighboring haplotypes on the same chromosome, make a decision about where to place the boundaries of the current haplotypes.
 	for ($i=0;$i<scalar(@{$arrayorderlookup2{$id}});$i++){
+		#Look up the order of this haplotype along the chromosome
 		$currtokspot=@{$arrayorderlookup2{$id}}[$i];
+		#Get the start and end of the adjacent haplotypes, only the start or end adjacent
 		$nextstart=@{$start2{$id}}[$currtokspot+1];
 		$lastend=@{$end2{$id}}[$currtokspot-1];
+		#Get the start and end of the current haplotype
 		$curstart=@{$start2{$id}}[$currtokspot];
 		$curend=@{$end2{$id}}[$currtokspot];
+		#Get the LRP extended start and end of the current haplotype
 		$LRPstart=@{$LRPstart2{$id}}[$currtokspot];
 		$LRPend=@{$LRPend2{$id}}[$currtokspot];
+		#Get the LRP extended start and end of the adjacent haplotypes, only the start or end adjacent
 		$lastLRPend=@{$LRPend2{$id}}[$currtokspot-1];
 		$nextLRPstart=@{$LRPstart2{$id}}[$currtokspot+1];
-		###Figure out new start
+		#Figure out new start
 		if($i==0){
 			@{$newstart2{$id}}[$currtokspot]=@{$LRPstart2{$id}}[$currtokspot];	
 		}else{
+			#Begin by testing for reliability. The new LRP extensions shouldn't overlap the non-extended boundaries of the adjacent haplotypes. This section works on the decision making for the LRP extended start.
+			#If the end of the adjacent haplotype is greater than the LRP extended start, this LRPstart is unreliable
 			if($lastend > $LRPstart){
-				#This LRPstart is unreliable
+				#If the LRP end of the adjacent haplotype is greater than the current haplotype start, the last LRTend is unreliable
 				if($lastLRPend > $curstart){
-					#The last LRTend is unreliable
 					#Both LRP extensions are unreliable, go off of original start
 					@{$newstart2{$id}}[$currtokspot]=$curstart;
+				#The LRP end of the adjacent haplotype appears to be reliable, and the current haplotype LRP start is unreliable, use the LRP end for the adjacent haplotype
 				}else{
-					#Use last LRTend + 1
+					#Use last LRPend + 1
 					@{$newstart2{$id}}[$currtokspot]=$lastLRPend+1;
 				}
+			#This LRPstart is reliable
 			}else{
-				#This LRPstart is reliable
+				#If the LRP end for the adjacent haplotype overlaps the start of the current haplotype, the LRTend for the adjacent haplotype is unreliable
 				if($lastLRPend > $curstart){
-					#The last LRTend is unreliable
-					#Use this LRTstart
+					#Use this LRPstart
 					@{$newstart2{$id}}[$currtokspot]=$LRPstart;
+				#Both LRT extensions are potentially reliable
 				}else{
-					#Both LRT extensions are reliablish
+					#If the LRP extensions overlap use the LRP end to establish a boundary outside of the overlap
 					if($lastLRPend > $LRPstart){
-						#The LRP extensions overlap
-						#Use last LRTend + 1
+						#Use last LRPend + 1
 						@{$newstart2{$id}}[$currtokspot]=$lastLRPend+1;
+					#The LRP extensions don't overlap
 					}else{
-						#The LRP extensions don't overlap
-						#Use this LRTstart
+						#Use this LRPstart
 						@{$newstart2{$id}}[$currtokspot]=$LRPstart;
 					}
 				}
 			}
 		}
+		#Figure out new end
 		if($i==(scalar(@{$arrayorderlookup2{$id}})-1)){
-			@{$newend2{$id}}[$currtokspot]=@{$LRPend2{$id}}[$currtokspot];
+			@{$newend2{$id}}[$currtokspot]=@{$LRPend2{$id}}[$currtokspot];	
 		}else{
+			#This is the same process, but for the LRP extended end of the haplotype instead of the beginning. Begin by testing for reliability. The new LRP extensions shouldn't overlap the non-extended boundaries of the adjacent haplotypes
+			#If the start of the adjacent haplotype is less than the LRP extended end, this LRPend is unreliable
 			if($nextstart < $LRPend){
-				#This LRP end is unreliable
+				#If the LRP start of the adjacent haplotype is less than the current haplotype end, the andjacent LRPstart is unreliable
 				if($nextLRPstart < $curend){
-					#The next LRP start is unreliable
-					#Both LRP extensions are unreliable, go off of the original end
+					#Both LRP extensions are unreliable, go off of original end
 					@{$newend2{$id}}[$currtokspot]=$curend;
+				#The LRP start of the adjacent haplotype appears to be reliable, and the current haplotype LRP end is unreliable, use the LRP start for the adjacent haplotype
 				}else{
 					#Use the next LRP start -1
 					@{$newend2{$id}}[$currtokspot]=$nextLRPstart-1;
 				}
+			#This LRP end is reliable
 			}else{
-				#This LRP end is reliable
+				#If the LRP start for the adjacent haplotype overlaps the end of the current haplotype, the LRTstart for the adjacent haplotype is unreliable
 				if($nextLRPstart < $curend){
-					#The next LRP start is unreliable
 					#Use the current LRP end
 					@{$newend2{$id}}[$currtokspot]=$LRPend;
+				#Both LRT extensions are potentially reliable
 				}else{
-					#Both LRP extensions are reliable
+					#If the LRP extensions overlap use the LRP start of the adjacent haplotype to establish a boundary outside of the overlap
 					if($nextLRPstart < $LRPend){
-						#The LRP extensions overlap
 						#Use the next LRP start -1
 						@{$newend2{$id}}[$currtokspot]=$nextLRPstart-1;
+					#The LRP extensions don't overlap
 					}else{
-						#The LRP extensions don't overlap
 						#Use this LRP end
 						@{$newend2{$id}}[$currtokspot]=$LRPend;
 					}
@@ -927,6 +1034,7 @@ foreach $id (@idlist){
 	}
 }
 
+#Reorganize the segment data. Each of these arrays with data in them are used intentionally so that the script can be easily edited to easily print the results after each step.
 push @segmentmatrixarray3, "$header1";
 foreach $id (@idlist){
 	for ($i=0;$i<scalar(@{$arrayorderlookup1{$id}});$i++){
@@ -938,6 +1046,7 @@ foreach $id (@idlist){
 		push @segmentmatrixarray3, "$id,@{$pseudofounder2{$id}}[$currtokspot],@{$newstart2{$id}}[$currtokspot],@{$newend2{$id}}[$currtokspot],2\n";
 	}
 }
+
 
 for($i=1;$i<scalar(@segmentmatrixarray3);$i++){
 	$line1=@segmentmatrixarray3[$i];
@@ -955,7 +1064,7 @@ for($i=1;$i<scalar(@segmentmatrixarray3);$i++){
 	push @{$hashing2{$id}}, $holder;
 }
 
-#This is another step in the PBRV program. This step consolidates redundant haplotypes identified in multiple people into single records. 
+#This step consolidates redundant haplotypes identified in multiple people into single records. 
 #Establish a switch that is used to reset a count of the current array position
 #Open the outfile for the condensed format
 $switcheroosky=0;
@@ -1022,7 +1131,7 @@ for($i=0;$i<scalar(@haps);$i++){
 foreach $unique (@haps){
 	#Split each case into haplotype name, start, and end position
 	@toks2=split("@",$unique);
-	#The hap
+	#Get the current haplotype, which by naming convention is a concatenated list of the individuals carrying the haplotype
 	$hap=@toks2[0];
 	#Get the ids for the people carrying this unique hap
 	@uniqueids=split("v",$hap);
@@ -1063,7 +1172,7 @@ foreach $unique (@haps){
 #Get a list of unique haplotypes. In this case, uniqueness is not dependent on start and end location, but rather only on the individuals carrying the haplotype.
 @uniquehaplist = keys %haplist;
 
-#Impute genotypes into haplotypes
+#This next section imputes genotypes into haplotypes
 #Go through each unique haplotype, in this case it is defined just by the individuals carrying the haplotype
 foreach $hap (@uniquehaplist){
 	#Create/blank a variable to hold ids
@@ -1077,7 +1186,7 @@ foreach $hap (@uniquehaplist){
 		$end=@{$ends{$hap}}[$i];
 		#For each marker/variant
 		for($j=0;$j<scalar(@{$genotypes{Position}});$j++){
-			#If the variant falls within the current hap 
+			#If the variant falls within the current hap, count the homozygous genotypes for the carriers of the haplotype at that variant/location and take a majority vote at the the assignment of the allele on the haplotype.
 			if(@{$genotypes{Position}}[$j] >= $start && @{$genotypes{Position}}[$j] <= $end){
 				$zerosum=0;
 				$onesum=0;
@@ -1099,6 +1208,7 @@ foreach $hap (@uniquehaplist){
 						next;
 					}
 				}
+				#Sum the obervations of 0 and 2 and use a majority vote to assign an allele to the haplotype at that location
 				$allelevalue=();
 				if(($onesum+$zerosum)>0){
 					$allelevalue=$onesum/($onesum+$zerosum);
@@ -1113,7 +1223,7 @@ foreach $hap (@uniquehaplist){
 	}
 }
 
-#Iteratively loop around pedigree until no more updating can be accomplished
+#Iteratively loop around pedigree, filling in obligatory alleles given individuals genotypes and the allele on the other chromosome, until no more updating can be accomplished
 
 #For each marker/variant in the file
 for($j=0;$j<scalar(@{$genotypes{Position}});$j++){
@@ -1191,6 +1301,7 @@ for($j=0;$j<scalar(@{$genotypes{Position}});$j++){
 	}
 }
 
+#Make an array (@haplotypesmatrixarray) that holds the haplotypes and their genoytpes in a format that can easily be printed to an outfile
 #Print the header line
 push @tempholderarray, "Marker,Chr,Position";
 #Continuation of printing the header line, print each haplotype as a column header
@@ -1212,18 +1323,20 @@ for($i=0;$i<scalar(@{$genotypes{Position}});$i++){
 	#print end of line
 	$tempholder=join(",",@tempholderarray);
 	push @haplotypesmatrixarray, "$tempholder\n";
-	
-	
 }
 
+#Store the allele carried by haplotypes in a matrix (%haplotypes) with the keys as the names of the haplotypes and the array positions hold the alleles where appropriate in the same order as the genotype file (ie 5th element is 5th element and so on, even if some elements are blank)
 $headerline=@haplotypesmatrixarray[0];
 @headertoks=split(',',$headerline);
 $j=0;
+#For each line in the array
 for($i=1;$i<scalar(@haplotypesmatrixarray);$i++){
+	#Process the line and split the line into an array
 	$line1=@haplotypesmatrixarray[$i];
 	chomp $line1;
 	my @toks1;
 	@toks1=split(",",$line1);
+	#Store each allele in the hash in the appropriate array element with the haplotypes as keys
 	for($k=0;$k<scalar(@headertoks);$k++){
 		$currcol=@headertoks[$k];
 		@{$haplotypes{$currcol}}[$j]=@toks1[$k];
@@ -1231,6 +1344,7 @@ for($i=1;$i<scalar(@haplotypesmatrixarray);$i++){
 	$j++;
 }
 
+#Reorganize and store the LRP-extended haplotypes stored in @segmentmatrixarray3 into three matrices %pseudofounder, %start, and %end. The chromosome (ie mat/pat, 1/2) is added to the name of the individual to differentiate the two haplotypes
 $headerline2=@segmentmatrixarray3[0];
 for($i=1;$i<scalar(@segmentmatrixarray3);$i++){
 	$line2=@segmentmatrixarray3[$i];
@@ -1242,13 +1356,19 @@ for($i=1;$i<scalar(@segmentmatrixarray3);$i++){
 	push @{$end{$chromohap}}, @toks2[3];
 }
 
+#Use the new haplotype names (ie. ID_1 or ID_2 designating maternal or parternal inheritance (with exception of founders) as keys in a hash storing the alleles these haplotypes carry
 @uniquechromohaps= keys %pseudofounder;
+#For each chromosome
 foreach $chromohap (@uniquechromohaps){
+	#For each segment that is part of that chromosome
 	for($i=0;$i<scalar(@{$pseudofounder{$chromohap}});$i++){
+		#Iterate through all of the variant positions
 		for($j=0;$j<scalar(@{$haplotypes{'Position'}});$j++){
+			#If the position falls within the haplotype segment, look up the allele for that haplotype, and store it in the hash %alleles for the current chromosome (ie ID_1 or ID_2)
 			if(@{$haplotypes{'Position'}}[$j]>=@{$start{$chromohap}}[$i] && @{$haplotypes{'Position'}}[$j]<=@{$end{$chromohap}}[$i]){
 				$currentpseudohap=@{$pseudofounder{$chromohap}}[$i];
 				@{$alleles{$chromohap}}[$j]=@{$haplotypes{$currentpseudohap}}[$j];
+			#If the segment ends, move on to the next segment
 			}elsif(@{$haplotypes{'Position'}}[$j]>@{$end{$chromohap}}[$i]){
 				last;
 			}
@@ -1256,27 +1376,37 @@ foreach $chromohap (@uniquechromohaps){
 	}
 }
 
-
+#This section fills in blanks in the phased chromosomes where the genotypes are known but where one or both chromosomes did not carry a defined shared segment
 #open(INFILE3, $ARGV[1])||die;
+#Get the headerline of the genotype array (@genotypefile)
 $headerline=@genotypefile[0];
 chomp $headerline;
+#Get a list of the IDs from the headerline
 @headertoks=split(",",$headerline);
+#Iterate through the elements of the genotype array (@genotypefile), or lines in a file as they store that way intentionally for easy printing
 for($j=1;$j<scalar(@genotypefile);$j++){
 	$line=@genotypefile[$j];
 	chomp $line;
 	@toks=split(",",$line);
+	#For each genotype
 	for($i=3;$i<scalar(@toks);$i++){
+		#Get the two chromosomes that this genotype represents (ie ID_1 and ID_2)
 		$chromohap1="@headertoks[$i]"."_1";
 		$chromohap2="@headertoks[$i]"."_2";
+		#If the genotype is 0,1,2 as it should be
 		if(@toks[$i] eq "0" || @toks[$i] eq "1" || @toks[$i] eq "2"){
+			#If the maternal chromosome doesn't have an assigned allele
 			if(@{$alleles{$chromohap1}}[$j-1] ne "0" & @{$alleles{$chromohap1}}[$j-1] ne "1"){
+				#And the paternal chromosome does
 				if(@{$alleles{$chromohap2}}[$j-1] eq "0" || @{$alleles{$chromohap2}}[$j-1] eq "1"){
+					#Assign the correct complementary allele to the maternal chromosome
 					$newallele=@toks[$i] - @{$alleles{$chromohap2}}[$j-1];
 					if($newallele eq '-1'){
 						@{$alleles{$chromohap1}}[$j-1]=0;
 					}else{
 						@{$alleles{$chromohap1}}[$j-1] = @toks[$i] - @{$alleles{$chromohap2}}[$j-1];
 					}
+				#If the paternal chromosome allele is also missing check if the genotype is homozygous, if so, add the correct alleles to both chromosomes
 				}else{
 					if(@toks[$i] eq '0'){
 						@{$alleles{$chromohap1}}[$j-1]=0;
@@ -1286,8 +1416,11 @@ for($j=1;$j<scalar(@genotypefile);$j++){
 						@{$alleles{$chromohap2}}[$j-1]=1;
 					}
 				}
+			#If the maternal allele is present
 			}elsif(@{$alleles{$chromohap2}}[$j-1] ne "0" & @{$alleles{$chromohap2}}[$j-1] ne "1"){
+				#And the paternal allele is not
 				if(@{$alleles{$chromohap1}}[$j-1] eq "0" || @{$alleles{$chromohap1}}[$j-1] eq "1"){
+					#Assign the correct complementary allele to the paternal chromosome
 					$newallele=@toks[$i] - @{$alleles{$chromohap1}}[$j-1];
 					if($newallele eq '-1'){
 						@{$alleles{$chromohap2}}[$j-1] = 0;
@@ -1300,8 +1433,10 @@ for($j=1;$j<scalar(@genotypefile);$j++){
 	}
 }
 
+#Print the phased chromosomes to a VCF file
 @toks2=split(",",$header2);
 @haplisttoprint=keys %alleles;
+#Print headerline stuff
 print OUTFILE2 "##phasing=partial\n";
 print OUTFILE2 "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
 #print OUTFILE "Marker,Chr,Position";
@@ -1309,6 +1444,7 @@ for($i=3;$i<scalar(@toks2);$i++){
 	print OUTFILE2 "\t@toks2[$i]";
 }
 print OUTFILE2 "\n";
+#For each line in the file, print the information stored from the original VCF. Then print the phased genotypes for the individuals in the file in the correct order.
 for($j=0;$j<scalar(@{$haplotypes{'Position'}});$j++){
 	print OUTFILE2 "@{$haplotypes{'Chr'}}[$j]\t@{$haplotypes{'Position'}}[$j]\t@{$haplotypes{'Marker'}}[$j]\t@ref[$j]\t@alt[$j]\t@qual[$j]\t@filter[$j]\t@info[$j]\tGT";
 	for($i=3;$i<scalar(@toks2);$i++){
